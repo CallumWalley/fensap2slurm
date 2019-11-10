@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import re, os, sys
+import re, os, sys, shutil
 
 input_grid_match=""
 matches=""
@@ -291,16 +291,18 @@ envsubst < template_$STARTING_STAGE.sl > .shot${SHOT}_${STARTING_STAGE}.sl
 sbatch .shot${SHOT}_${STARTING_STAGE}.sl
 echo "Submitted next stage .shot${SHOT}_${STARTING_STAGE}.sl"
 """
+print(path_solvercmd)
+old = open(path_solvercmd, "r+")
+first_line = old.readline()
+old.close()
 
-f = open(path_solvercmd_root + "/.solvercmd", "w+")
-first_line = f.readline()
-print("\n")
 if first_line!="#!/bin/bash -e":
-    os.rename(path_solvercmd, path_solvercmd_root+"/.old.solvercmd")
-    print("Renamed FENSAP generated '.solvercmd' to 'old.solvercmd'")
+    shutil.copyfile(path_solvercmd, path_solvercmd_root+"/.old.solvercmd")
+    print("Renamed FENSAP generated '.solvercmd' to '.old.solvercmd'")
 
-f.write( solvercmd % solvercmd_defaults )
-f.close()
+new = open(path_solvercmd_root + "/.solvercmd", "w+")
+new.write( solvercmd % solvercmd_defaults )
+new.close()
 os.chmod(path_solvercmd_root + "/.solvercmd", 0750)
 print("New .solvercmd written to " + path_solvercmd_root + "/.solvercmd")
 print("\nCheck each 'template' file for appropriate resources then run './.solvercmd'")
