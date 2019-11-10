@@ -1,36 +1,102 @@
 #!/usr/bin/env python
 
-import re, os
+import re, os, sys
 
-oldsolvercmd = os.environ['PWD'] + "/.solvercmd"
+input_grid_match=""
+matches=""
 
-# Open file
+def parse(path_solvercmd):
+    """Try reading .solvercmd"""
+    global matches
+    global input_grid_match
+    try:
+        with open(path_solvercmd, "r") as file:
+            solvercmd_txt = file.read()
+    except Exception as reason:
+        raise Exception(reason)
+
+    print("'.solvercmd' found in '" + path_solvercmd_root + "'")
+
+    master_pattern = re.compile(r"echo STEP:(?P<shot>\d*)_(?P<type>\w*)", flags=re.M)
+    input_grid_pattern = re.compile(r"  mv (\"\S*\")", flags=re.M)
+    
+    matches = master_pattern.finditer(solvercmd_txt)
+    input_grid_match = input_grid_pattern.search(solvercmd_txt)
+
+    # This is the step at which the simulation will be considered finished
+    end_step = 0
+
+    for match in matches:
+        match_dict = match.groupdict()
+
+        if not match_dict["type"] in step_types:
+            step_types.append(match_dict["type"])
+        if not match_dict["shot"] in shots:
+            shots.append(match_dict["shot"])
+        end_step+=1
+
+    if end_step < 1:
+        raise Exception("No stages found")
+
+    print(("Workflow consists of " + " => ".join(step_types ) + ", " + str(len(shots)) + " shots\n"))
+
+
+step_types = []
+shots = []
+
+if len(sys.argv) > 1:
+    path_solvercmd_root=sys.argv[1].strip()
+    while path_solvercmd_root[-1]=="/": 
+        path_solvercmd_root=path_solvercmd_root[0:-1]    
+    if path_solvercmd_root[-10:]==".solvercmd":
+        path_solvercmd_root=path_solvercmd_root[0:-10]
+else:
+    path_solvercmd_root=os.environ['PWD']
+
+path_solvercmd_root=os.path.abspath(path_solvercmd_root)
+path_solvercmd=path_solvercmd_root + "/.solvercmd"
+
+try:
+    parse(path_solvercmd)
+except Exception as reason:
+    print("Could not load '" + path_solvercmd + "': " + str(reason))
+    try:
+        print("Looking for .old.solvercmd")
+        path_solvercmd=path_solvercmd_root + "/.old.solvercmd"
+        parse(path_solvercmd)
+
+    except Exception as reason:
+        print("Could not load '" + path_solvercmd + "': " + str(reason))
+        exit(1)
+
+grid_input=input_grid_match.group(1)
+
 step_type_defaults = {
     "fensap": {
         "this_step": "fensap",
-        "copy":"roughness.dat.ice.${SHOT_PADDED_LAST} roughness.dat",
-        "remove":"fensapstop.txt.fensap.${SHOT_PADDED}",
+        "copy":"if [ \"$SHOT\" -gt \"1\" ];then cp -v  roughness.dat.ice.${SHOT_PADDED_LAST} roughness.dat;fi",
+        "remove":"rm -fv fensapstop.txt.fensap.${SHOT_PADDED}",
         "executable": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/fensapMPI",
         "waitfile": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/testWaitFileNormally",
         "inputs":"-f files.fensap.${SHOT_PADDED} -s fensapstop.txt.fensap.${SHOT_PADDED}",
         "move":"",
-        "default_time": "00:00:10",
+        "default_time": "10:00:00",
         "default_mem_per_cpu": "1500",
-        "default_nodes": "1",
-        "default_ntasks_per_node":"1"                
+        "default_nodes": "2",
+        "default_ntasks_per_node":"16"                
     },
     "drop": {
         "this_step": "drop",
         "copy":"",
-        "remove":"fensapstop.txt.drop.${SHOT_PADDED}",
+        "remove":"rm -fv fensapstop.txt.drop.${SHOT_PADDED}",
         "executable": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/fensapMPI",
         "waitfile": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/testWaitFileNormally",
         "inputs":"-f files.drop.${SHOT_PADDED} -s fensapstop.txt.drop.${SHOT_PADDED}",
         "move":"",
-        "default_time": "00:00:10",
+        "default_time": "02:00:00",
         "default_mem_per_cpu": "1500",
         "default_nodes": "1",
-        "default_ntasks_per_node":"1"
+        "default_ntasks_per_node":"16"
     },
     "ice": {
         "this_step": "ice",
@@ -40,10 +106,10 @@ step_type_defaults = {
         "waitfile": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/testWaitFileNormally ice3dstop.txt.ice.${SHOT_PADDED} .solvercmd.out",
         "inputs":"-f config.ice.${SHOT_PADDED} -s ice3dstop.txt.ice.${SHOT_PADDED}",
         "move":"",
-        "default_time": "00:00:10",
+        "default_time": "02:00:00",
         "default_mem_per_cpu": "1500",
         "default_nodes": "1",
-        "default_ntasks_per_node":"1"
+        "default_ntasks_per_node":"16"
     },
     "griddisp": {
         "this_step": "griddisp",
@@ -52,11 +118,11 @@ step_type_defaults = {
         "executable": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/fensapMPI",
         "waitfile": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/testWaitFileNormally",
         "inputs":"-f files.griddisp.${SHOT_PADDED} -s fensapstop.txt.griddisp.${SHOT_PADDED}",
-        "move":"\"grid.ice.${SHOT_PADDED}.disp\" \"grid.ice.${SHOT_PADDED_NEXT}",
-        "default_time": "00:00:10",
+        "move":"if [ \"$SHOT\" -gt \"1\" ];then mv -v \"grid.ice.${SHOT_PADDED}.disp\" \"grid.ice.${SHOT_PADDED_NEXT}\"; else mv -v \"" + grid_input + "\" \"grid.ice.${SHOT_PADDED_NEXT}\";fi",
+        "default_time": "02:00:00",
         "default_mem_per_cpu": "1500",
         "default_nodes": "1",
-        "default_ntasks_per_node":"1"
+        "default_ntasks_per_node":"16"
     },
     "other": {
         "this_step": "other",
@@ -75,7 +141,7 @@ step_type_defaults = {
 
 default_script = """#!/bin/bash -e
 
-#SBATCH --job-name SHOT${SHOT}_%(this_step)s
+#SBATCH --job-name Run1_SHOT${SHOT}_%(this_step)s
 #SBATCH --time %(default_time)s
 #SBATCH --mem-per-cpu %(default_mem_per_cpu)s
 #SBATCH --nodes %(default_nodes)s
@@ -85,26 +151,31 @@ default_script = """#!/bin/bash -e
 #SBATCH --output    .solvercmd.out   # Log
 #SBATCH --licenses ansys_r@uoa_foe:1,ansys_hpc@uoa_foe:16 # HPC licences should be equal to number CPUs minus 16
 
+# Set this equal to true if you want next step to submit autmatically
+export CONTINUE="TRUE"
+
 #============================================#
-# Current shot: ${SHOT}
-# %(progress)s
+%(progress)s
 #============================================#
 
-env
+# Shouldn't need to edit anything below this point!
 
-echo "Starting shot ${SHOT}, %(this_step)s (step $STEP)"
-echo STEP:${SHOT}_fensap | tee -a .solvercmd.out
 
 if [ "${SHOT}" == "$(cat .restart)" ]; then echo "WARNING: STEP in '.restart' does not match STEP from current run."; fi
 
-rm -f fensapstop.txt.fensap.$(printf %%06d $SHOT)
-#srun %(executable)s  2>&1 | tee -a .solvercmd.out
-#%(waitfile)s
+# Files to be copied
+%(copy)s
+
+# Files to be removed
+%(remove)s
+
+# srun %(executable)s  2>&1 | tee -a .solvercmd.out
+# %(waitfile)s
+
+# Files to be moved
+%(move)s
 
 echo "Job completed successfully"
-
-# Save Current step
-echo $STEP > .restart
 
 # Iterate Shot
 %(shot_iterator)s
@@ -113,6 +184,9 @@ echo "Next shot, shot $SHOT"
 
 # Iterate Step
 export STEP=$((STEP+1))
+
+# Save Current step
+echo $STEP > .restart
 echo "Next step, step $STEP"
 
 if [ "$SHOT" -le "%(end_shot)s" ]; then
@@ -121,8 +195,13 @@ if [ "$SHOT" -le "%(end_shot)s" ]; then
     echo "Creating new slurm script '.shot${SHOT}_%(next_step)s.sl' from template 'template_%(next_step)s.sl'"
 
     #rm .shot${SHOT}_%(this_step)s.sl
-    sbatch .shot${SHOT}_%(next_step)s.sl
-    echo "Submitted next stage %(next_step)s, shot $SHOT"
+    
+    if [ "$CONTINUE" == "TRUE" ]; then
+        sbatch .shot${SHOT}_%(next_step)s.sl
+        echo "Submitted next stage %(next_step)s, shot $SHOT"
+    else
+        echo "'CONTINUE' not set to 'TRUE', simulation must be resumed manually by running '.solvercmd'"
+    fi
 
 else
     echo "Workflow completed successfully"
@@ -130,32 +209,6 @@ else
 fi
 """
 
-step_types = []
-shots = []
-
-# def convert_solvercmd():
-with open(oldsolvercmd, "r") as file:
-    # Read next line
-    solvercmd_txt = file.read()
-
-print(solvercmd_txt)
-
-master_pattern = re.compile(r"echo STEP:(?P<shot>\d*)_(?P<type>\w*)", flags=re.M | re.DEBUG)
-matches = master_pattern.finditer(solvercmd_txt)
-
-# This is the step at which the simulation will be considered finished
-end_step = 0
-
-for match in matches:
-    match_dict = match.groupdict()
-    if not match_dict["type"] in step_types:
-        step_types.append(match_dict["type"])
-    if not match_dict["shot"] in shots:
-        shots.append(match_dict["shot"])
-
-    end_step+=1
-
-print(("Workflow will run " + " => ".join(step_types ) + " " + str(len(shots)) + " times"))
 
 for i in range(len(step_types)):
 
@@ -183,10 +236,10 @@ for i in range(len(step_types)):
         _progress+=" ==> "  + step_types[ii]
         ii+=1
 
-    sub_values["progress"]=_progress
+    sub_values["progress"]="# Shot ${SHOT}/" + str(len(shots)) + "\n# " + _progress
 
 
-    slurm_filename = "template_" + this_step + ".sl"
+    slurm_filename = path_solvercmd_root + "/template_" + this_step + ".sl"
     print("Writing template slurm file " + "'" + slurm_filename + "'.")
     f = open(slurm_filename, "w+")
 #   f.write(default_script % {**step_type_defaults[match_dict["type"]] , "next_step":next_step, "this_step":this_step})
@@ -194,58 +247,60 @@ for i in range(len(step_types)):
     f.write( default_script % sub_values )
     f.close()
 
-starting_shot="1"
-
 solvercmd_defaults = {
-    "first_step":step_types[0],
-    "first_shot":"1"
+    "step_types":" ".join(step_types),
+    "numsteps":len(step_types)
 }
 
 solvercmd="""
-#!/bin/bash
+#!/bin/bash -e
 
 if [ -f .restart ]; then
-  STEP=`cat .restart`
-  echo "Continuing from step $STEP. this can be modified in '.restart"
+    export STEP=`cat .restart`
+    echo "Continuing from step $STEP. this can be modified in '.restart'"
 else
-  STEP=0
+    echo "Writing '.restart' file, starting at step 0"
+    export STEP=0
+    rm -v .solvercmd.out
 fi
 
-export STEP
-export SHOT="1"
-export SHOT_PADDED="000001"
-export SHOT_PADDED_NEXT="000002"
-export SHOT_PADDED_LAST=""
 
-envsubst < template_%(first_step)s.sl > .shot%(first_shot)s_%(first_step)s.sl
-#cat template_%(first_step)s.sl > .shot%(first_shot)s_%(first_step)s.sl
+if [ "$STEP" -gt "%(numsteps)s" ]; then
+    echo "Final step reached, change '.restart' if not correct." 
+    exit 1
+fi
+
+# These are the stages present in this workflow.
+STEP_TYPES=( %(step_types)s )
+
+# Based on .restart number
+export SHOT=$(((STEP/%(numsteps)s)+1))
+echo ""
+
+STARTING_STAGE=${STEP_TYPES[STEP%%%(numsteps)s]}
+echo "Starting at shot $SHOT, stage '$STARTING_STAGE'"
+
+# Zero padded numbers for file names.
+export SHOT_PADDED=$(printf %%06d$(($SHOT)))
+export SHOT_PADDED_NEXT=$(printf %%06d$(($SHOT+1)))
+export SHOT_PADDED_LAST=$(printf %%06d$(($SHOT-1)))
+
+echo "Creating new slurm script '.shot${SHOT}_${STARTING_STAGE}.sl' from template 'template_${STARTING_STAGE}.sl'"
+envsubst < template_$STARTING_STAGE.sl > .shot${SHOT}_${STARTING_STAGE}.sl
+
+sbatch .shot${SHOT}_${STARTING_STAGE}.sl
+echo "Submitted next stage .shot${SHOT}_${STARTING_STAGE}.sl"
 """
 
-f = open("test_solvercmd", "w+")
+f = open(path_solvercmd_root + "/.solvercmd", "w+")
+first_line = f.readline()
+print("\n")
+if first_line!="#!/bin/bash -e":
+    os.rename(path_solvercmd, path_solvercmd_root+"/.old.solvercmd")
+    print("Renamed FENSAP generated '.solvercmd' to 'old.solvercmd'")
+
 f.write( solvercmd % solvercmd_defaults )
 f.close()
-
-#print("run:  'envsubst < " + step_types[0] + ".sl > .shot" + starting_shot + "_ " + step_types[0] + ".sl.tmp")
-# solvercmd=
-
-# if [ -f .restart ]; then
-#   STEP=`cat .restart`
-# else
-#   STEP=0
-# fi
-
-# "000001"
-
-
-# print(step_types)
-# print(shots)
-
-# for step_type in step_types:
-#     time = raw_input("Expected runtime?[]: ") or default
-
-# print(matches.groupdict())
-# matches.groupdict()
-# for match in master_pattern.:
-#   print()
-
-# --(?P<key>\S*)\s(?P<value>\S*)
+os.chmod(path_solvercmd_root + "/.solvercmd", 0750)
+print("New .solvercmd written to " + path_solvercmd_root + "/.solvercmd")
+print("\nCheck each 'template' file for appropriate resources then run './.solvercmd'")
