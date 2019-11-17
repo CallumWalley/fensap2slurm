@@ -4,72 +4,98 @@ import re, os, sys, shutil
 
 input_grid_match=""
 matches=""
+step_types=[]
+shots=[]
+path_solvercmd_root=""
 
-def parse(path_solvercmd):
-    """Try reading .solvercmd"""
-    global matches
-    global input_grid_match
-    try:
+def _input():
+    global path_solvercmd_root 
+    def _copy():
+        shutil.copyfile(path_solvercmd_root + "/.solvercmd", path_solvercmd_root+"/.old.solvercmd")
+        print("Renamed FENSAP generated '.solvercmd' to '.old.solvercmd'")
+
+    def _parse(path_solvercmd):
+        """Try reading .solvercmd"""
+
         with open(path_solvercmd, "r") as file:
+            shebang = file.readline().strip()
+
+            if shebang == "#!/bin/bash -e":
+                raise Exception("'Already SLURMified.")
+            elif shebang != "#!/bin/sh":
+                raise Exception("Does not look like a valid .solvercmd file.")
+            
             solvercmd_txt = file.read()
-    except Exception as reason:
-        raise Exception(reason)
+                    
+        master_pattern = re.compile(r"echo STEP:(?P<shot>\d*)_(?P<type>\w*)", flags=re.M)
+        input_grid_pattern = re.compile(r"  mv (\"\S*\")", flags=re.M)
+        
+        matches = master_pattern.finditer(solvercmd_txt)
+        input_grid_match = input_grid_pattern.search(solvercmd_txt).group(1)
 
-    print("'.solvercmd' found in '" + path_solvercmd_root + "'")
 
-    master_pattern = re.compile(r"echo STEP:(?P<shot>\d*)_(?P<type>\w*)", flags=re.M)
-    input_grid_pattern = re.compile(r"  mv (\"\S*\")", flags=re.M)
+        # This is the step at which the simulation will be considered finished
+        end_step = 0
+
+        for match in matches:
+            match_dict = match.groupdict()
+
+            if not match_dict["type"] in step_types:
+                step_types.append(match_dict["type"])
+            if not match_dict["shot"] in shots:
+                shots.append(match_dict["shot"])
+            end_step+=1
+
+        if end_step < 1:
+            raise Exception("No stages found")
+
+        print(("\nWorkflow consists of " + " => ".join(step_types ) + ", " + str(len(shots)) + " shots\n"))
+
+    if len(sys.argv) > 1:
+        path_solvercmd_root=sys.argv[1].strip()
+        # Strip any / from end of path.
+        while path_solvercmd_root[-1]=="/": 
+            path_solvercmd_root=path_solvercmd_root[0:-1]    
+        if path_solvercmd_root[-10:]==".solvercmd":
+            path_solvercmd_root=path_solvercmd_root[0:-10]
+        try:
+            print("Attempting to parse '" + path_solvercmd_root + "/.solvercmd'.")
+            _parse(path_solvercmd_root+"/.solvercmd")
+        except Exception as reason:
+            print("Could not load '" + path_solvercmd_root + "/.solvercmd': " + str(reason))
+            try:
+                print("Attempting to parse '" + path_solvercmd_root + "/.old.solvercmd'.")
+                _parse(path_solvercmd_root + "/.old.solvercmd")
+            except Exception as reason:
+                print("Could not load '" + path_solvercmd_root + "/.old.solvercmd': " + str(reason))
+            else:
+                return         
+        else:
+            return 
+            _copy()
+
+
+    path_solvercmd_root=os.path.abspath(os.environ['PWD'])
     
-    matches = master_pattern.finditer(solvercmd_txt)
-    input_grid_match = input_grid_pattern.search(solvercmd_txt)
-
-    # This is the step at which the simulation will be considered finished
-    end_step = 0
-
-    for match in matches:
-        match_dict = match.groupdict()
-
-        if not match_dict["type"] in step_types:
-            step_types.append(match_dict["type"])
-        if not match_dict["shot"] in shots:
-            shots.append(match_dict["shot"])
-        end_step+=1
-
-    if end_step < 1:
-        raise Exception("No stages found")
-
-    print(("Workflow consists of " + " => ".join(step_types ) + ", " + str(len(shots)) + " shots\n"))
-
-
-step_types = []
-shots = []
-
-if len(sys.argv) > 1:
-    path_solvercmd_root=sys.argv[1].strip()
-    while path_solvercmd_root[-1]=="/": 
-        path_solvercmd_root=path_solvercmd_root[0:-1]    
-    if path_solvercmd_root[-10:]==".solvercmd":
-        path_solvercmd_root=path_solvercmd_root[0:-10]
-else:
-    path_solvercmd_root=os.environ['PWD']
-
-path_solvercmd_root=os.path.abspath(path_solvercmd_root)
-path_solvercmd=path_solvercmd_root + "/.solvercmd"
-
-try:
-    parse(path_solvercmd)
-except Exception as reason:
-    print("Could not load '" + path_solvercmd + "': " + str(reason))
     try:
-        print("Looking for .old.solvercmd")
-        path_solvercmd=path_solvercmd_root + "/.old.solvercmd"
-        parse(path_solvercmd)
-
+        print("Attempting to parse '" + path_solvercmd_root + "/.solvercmd'.")
+        _parse(path_solvercmd_root+"/.solvercmd")
     except Exception as reason:
-        print("Could not load '" + path_solvercmd + "': " + str(reason))
-        exit(1)
+        print("Could not load '" + path_solvercmd_root + "/.solvercmd': " + str(reason))
+        try:
+            print("Attempting to parse '" + path_solvercmd_root + "/.old.solvercmd'.")
+            _parse(path_solvercmd_root + "/.old.solvercmd")
+        except Exception as reason:
+            print("Could not load '" + path_solvercmd_root + "/.old.solvercmd': " + str(reason))
+            exit(1)
+        else:
+            return 
+    else:
+        _copy()
+        return 
 
-grid_input=input_grid_match.group(1)
+
+    
 
 step_type_defaults = {
     "fensap": {
@@ -118,7 +144,7 @@ step_type_defaults = {
         "executable": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/fensapMPI",
         "waitfile": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/testWaitFileNormally",
         "inputs":"-f files.griddisp.${SHOT_PADDED} -s fensapstop.txt.griddisp.${SHOT_PADDED}",
-        "move":"if [ \"$SHOT\" -gt \"1\" ];then mv -v \"grid.ice.${SHOT_PADDED}.disp\" \"grid.ice.${SHOT_PADDED_NEXT}\"; else mv -v \"" + grid_input + "\" \"grid.ice.${SHOT_PADDED_NEXT}\";fi",
+        "move":"if [ \"$SHOT\" -gt \"1\" ];then mv -v \"grid.ice.${SHOT_PADDED}.disp\" \"grid.ice.${SHOT_PADDED_NEXT}\"; else mv -v \"" + input_grid_match + "\" \"grid.ice.${SHOT_PADDED_NEXT}\";fi",
         "default_time": "02:00:00",
         "default_mem_per_cpu": "1500",
         "default_nodes": "1",
@@ -209,6 +235,7 @@ else
 fi
 """
 
+_input()
 
 for i in range(len(step_types)):
 
@@ -227,6 +254,7 @@ for i in range(len(step_types)):
     # Print summary of steps
     _progress="==> "
     ii=0
+
     while ii < i:
         _progress+=step_types[ii]+" ==> "
         ii+=1
@@ -237,7 +265,6 @@ for i in range(len(step_types)):
         ii+=1
 
     sub_values["progress"]="# Shot ${SHOT}/" + str(len(shots)) + "\n# " + _progress
-
 
     slurm_filename = path_solvercmd_root + "/template_" + this_step + ".sl"
     print("Writing template slurm file " + "'" + slurm_filename + "'.")
@@ -291,14 +318,7 @@ envsubst < template_$STARTING_STAGE.sl > .shot${SHOT}_${STARTING_STAGE}.sl
 sbatch .shot${SHOT}_${STARTING_STAGE}.sl
 echo "Submitted next stage .shot${SHOT}_${STARTING_STAGE}.sl"
 """
-print(path_solvercmd)
-old = open(path_solvercmd, "r+")
-first_line = old.readline()
-old.close()
 
-if first_line!="#!/bin/bash -e":
-    shutil.copyfile(path_solvercmd, path_solvercmd_root+"/.old.solvercmd")
-    print("Renamed FENSAP generated '.solvercmd' to '.old.solvercmd'")
 
 new = open(path_solvercmd_root + "/.solvercmd", "w+")
 new.write( solvercmd % solvercmd_defaults )
