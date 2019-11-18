@@ -27,11 +27,17 @@ def _input():
             
             solvercmd_txt = file.read()
                     
-        master_pattern = re.compile(r"echo STEP:(?P<shot>\d*)_(?P<type>\w*)", flags=re.M)
+        #master_pattern = re.compile(r"echo STEP:(?P<shot>\d*)_(?P<type>\w*)", flags=re.M)
+        master_pattern = re.compile(r"(echo STEP:(?P<shot>\d*)_(?P<type>\w*))|(echo STEP:(?P<all>[^\|]*) \|)", flags=re.M)
+
         input_grid_pattern = re.compile(r"  mv (\"\S*\")", flags=re.M)
         
         matches = master_pattern.finditer(solvercmd_txt)
-        input_grid_match = input_grid_pattern.search(solvercmd_txt).group(1)
+
+        try:
+            input_grid_match = input_grid_pattern.search(solvercmd_txt).group(1)
+        except:
+            input_grid_match="../*.grid"
 
 
         # This is the step at which the simulation will be considered finished
@@ -39,12 +45,19 @@ def _input():
 
         for match in matches:
             match_dict = match.groupdict()
+            print(match_dict)
+            
+            if (match_dict["type"] is not None) and (not match_dict["type"] in step_types):
+                    step_types.append(match_dict["type"])
+            if (match_dict["shot"] is not None) and (not match_dict["shot"] in shots):
+                    shots.append(match_dict["shot"])
+            if (match_dict["all"] is not None) and (not match_dict["all"].replace(" ", "_").lower() in step_types):
+                    step_types.append(match_dict["all"].replace(" ", "_").lower())
 
-            if not match_dict["type"] in step_types:
-                step_types.append(match_dict["type"])
-            if not match_dict["shot"] in shots:
-                shots.append(match_dict["shot"])
             end_step+=1
+
+        print(step_types)
+        print(shots)
 
         if end_step < 1:
             raise Exception("No stages found")
@@ -87,6 +100,7 @@ def _input():
             _parse(path_solvercmd_root + "/.old.solvercmd")
         except Exception as reason:
             print("Could not load '" + path_solvercmd_root + "/.old.solvercmd': " + str(reason))
+            print("Error: Could not find parsable '.solvercmd'. Check current directory or directory provided as argument is valid.")
             exit(1)
         else:
             return 
@@ -100,6 +114,7 @@ def _input():
 step_type_defaults = {
     "fensap": {
         "this_step": "fensap",
+        "misc":"",
         "copy":"if [ \"$SHOT\" -gt \"1\" ];then cp -v  roughness.dat.ice.${SHOT_PADDED_LAST} roughness.dat;fi",
         "remove":"rm -fv fensapstop.txt.fensap.${SHOT_PADDED}",
         "executable": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/fensapMPI",
@@ -113,6 +128,7 @@ step_type_defaults = {
     },
     "drop": {
         "this_step": "drop",
+        "misc":"",
         "copy":"",
         "remove":"rm -fv fensapstop.txt.drop.${SHOT_PADDED}",
         "executable": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/fensapMPI",
@@ -126,6 +142,7 @@ step_type_defaults = {
     },
     "ice": {
         "this_step": "ice",
+        "misc":"",
         "copy":"",
         "remove":"",
         "executable": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin//opt/nesi/mahuika/ANSYS/v192/fensapice/bin/ice3dMPI",
@@ -139,6 +156,7 @@ step_type_defaults = {
     },
     "griddisp": {
         "this_step": "griddisp",
+        "misc":"",
         "copy":"",
         "remove":"",
         "executable": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/fensapMPI",
@@ -150,8 +168,23 @@ step_type_defaults = {
         "default_nodes": "1",
         "default_ntasks_per_node":"16"
     },
+    "_custom_remeshing": {
+        "this_step": "_custom_remeshing",
+        "misc":"",
+        "copy":"",
+        "remove":"",
+        "executable": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/fensapMPI",
+        "waitfile": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/testWaitFileNormally",
+        "inputs":"-f files.fensap.${SHOT_PADDED} -s fensapstop.txt.fensap.${SHOT_PADDED}",
+        "move":"",
+        "default_time": "10:00:00",
+        "default_mem_per_cpu": "1500",
+        "default_nodes": "4",
+        "default_ntasks_per_node":"16"
+    },
     "other": {
         "this_step": "other",
+        "misc":"",
         "copy":"",
         "remove":"",
         "executable": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/fensapMPI",
@@ -240,7 +273,11 @@ _input()
 for i in range(len(step_types)):
 
     this_step=step_types[i]
-    sub_values=step_type_defaults[this_step]
+    if not this_step in step_type_defaults:
+        print("Step type '" + this_step + "' not recognised. Template will require modification.")
+        sub_values=step_type_defaults["other"]
+    else:
+        sub_values=step_type_defaults[this_step]
 
     if i >= len(step_types)-1:
         sub_values["next_step"]=step_types[0]
