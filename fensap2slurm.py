@@ -45,7 +45,6 @@ def _input():
 
         for match in matches:
             match_dict = match.groupdict()
-            print(match_dict)
             
             if (match_dict["type"] is not None) and (not match_dict["type"] in step_types):
                     step_types.append(match_dict["type"])
@@ -228,8 +227,8 @@ if [ "${SHOT}" == "$(cat .restart)" ]; then echo "WARNING: STEP in '.restart' do
 # Files to be removed
 %(remove)s
 
-# srun %(executable)s  2>&1 | tee -a .solvercmd.out
-# %(waitfile)s
+srun %(executable)s
+%(waitfile)s
 
 # Files to be moved
 %(move)s
@@ -259,7 +258,7 @@ if [ "$SHOT" -le "%(end_shot)s" ]; then
         sbatch .shot${SHOT}_%(next_step)s.sl
         echo "Submitted next stage %(next_step)s, shot $SHOT"
     else
-        echo "'CONTINUE' not set to 'TRUE', simulation must be resumed manually by running '.solvercmd'"
+        echo "'CONTINUE' not set to 'TRUE', '.shot${SHOT}_%(this_step)s.sl' must be resumed manually by running '.solvercmd'"
     fi
 
 else
