@@ -145,7 +145,7 @@ step_type_defaults = {
         "copy":"",
         "remove":"",
         "executable": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin//opt/nesi/mahuika/ANSYS/v192/fensapice/bin/ice3dMPI",
-        "waitfile": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/testWaitFileNormally ice3dstop.txt.ice.${SHOT_PADDED} .solvercmd.out",
+        "waitfile": "/opt/nesi/mahuika/ANSYS/v192/fensapice/bin/testWaitFileNormally ice3dstop.txt.ice.${SHOT_PADDED}",
         "inputs":"-f config.ice.${SHOT_PADDED} -s ice3dstop.txt.ice.${SHOT_PADDED}",
         "move":"",
         "default_time": "02:00:00",
@@ -211,6 +211,9 @@ default_script = """#!/bin/bash -e
 
 # Set this equal to true if you want next step to submit autmatically
 export CONTINUE="TRUE"
+
+# This shouldn't be hard coded
+module load ANSYS/19.2
 
 #============================================#
 %(progress)s
