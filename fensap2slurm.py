@@ -245,6 +245,7 @@ echo "Next shot, shot $SHOT"
 
 # Iterate Step
 export STEP=$((STEP+1))
+export D='$'
 
 # Save Current step
 echo $STEP > .restart
@@ -257,7 +258,7 @@ if [ "$SHOT" -le "%(end_shot)s" ]; then
 
     #rm .shot${SHOT}_%(this_step)s.sl
     
-    if [ "$CONTINUE" == "TRUE" ]; then
+    if [ "${D}CONTINUE" == "TRUE" ]; then
         sbatch .shot${SHOT}_%(next_step)s.sl
         echo "Submitted next stage %(next_step)s, shot $SHOT"
     else
@@ -350,6 +351,7 @@ echo "Starting at shot $SHOT, stage '$STARTING_STAGE'"
 export SHOT_PADDED=$(printf %%06d$(($SHOT)))
 export SHOT_PADDED_NEXT=$(printf %%06d$(($SHOT+1)))
 export SHOT_PADDED_LAST=$(printf %%06d$(($SHOT-1)))
+export D='$'
 
 echo "Creating new slurm script '.shot${SHOT}_${STARTING_STAGE}.sl' from template 'template_${STARTING_STAGE}.sl'"
 envsubst < template_$STARTING_STAGE.sl > .shot${SHOT}_${STARTING_STAGE}.sl
